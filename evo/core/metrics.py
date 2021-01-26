@@ -23,12 +23,13 @@ import abc
 import logging
 import math
 import sys
-from enum import Enum  # requires enum34 in Python 2.7
+import typing
+from enum import Enum
 
 import numpy as np
 
 from evo import EvoException
-from evo.core import filters
+from evo.core import filters, trajectory
 from evo.core.result import Result
 from evo.core import lie_algebra as lie
 
@@ -38,6 +39,9 @@ else:
     ABC = abc.ABCMeta('ABC', (), {})
 
 logger = logging.getLogger(__name__)
+
+
+PathPair = typing.Tuple[trajectory.PosePath3D, trajectory.PosePath3D]
 
 
 class MetricsException(EvoException):
@@ -79,10 +83,6 @@ class VelUnit(Enum):
 
 class Metric(ABC):
     @abc.abstractmethod
-    def reset_parameters(self, parameters):
-        return
-
-    @abc.abstractmethod
     def process_data(self, data):
         return
 
@@ -103,23 +103,18 @@ class PE(Metric):
     """
     Abstract base class of pose error metrics.
     """
-
     def __init__(self):
         self.unit = Unit.none
         self.error = []
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "PE metric base class"
-
-    @abc.abstractmethod
-    def reset_parameters(self, parameters):
-        return
 
     @abc.abstractmethod
     def process_data(self, data):
         return
 
-    def get_statistic(self, statistics_type):
+    def get_statistic(self, statistics_type: StatisticsType) -> float:
         if statistics_type == StatisticsType.rmse:
             squared_errors = np.power(self.error, 2)
             return math.sqrt(np.mean(squared_errors))
@@ -139,7 +134,7 @@ class PE(Metric):
         else:
             raise MetricsException("unsupported statistics_type")
 
-    def get_all_statistics(self):
+    def get_all_statistics(self) -> typing.Dict[str, float]:
         """
         :return: a dictionary {StatisticsType.value : float}
         """
@@ -152,7 +147,8 @@ class PE(Metric):
                     raise
         return statistics
 
-    def get_result(self, ref_name="reference", est_name="estimate"):
+    def get_result(self, ref_name: str = "reference",
+                   est_name: str = "estimate") -> Result:
         """
         Wrap the result in Result object.
         :param ref_name: optional, label of the reference data
@@ -179,9 +175,10 @@ class RPE(PE):
     RPE: relative pose error
     metric for investigating the odometry drift
     """
-
-    def __init__(self, pose_relation=PoseRelation.translation_part, delta=1.0,
-                 delta_unit=Unit.frames, rel_delta_tol=0.1, all_pairs=False):
+    def __init__(self,
+                 pose_relation: PoseRelation = PoseRelation.translation_part,
+                 delta: float = 1.0, delta_unit: Unit = Unit.frames,
+                 rel_delta_tol: float = 0.1, all_pairs: bool = False):
         if delta < 0:
             raise MetricsException("delta must be a positive number")
         if delta_unit == Unit.frames and not isinstance(delta, int) \
@@ -193,9 +190,9 @@ class RPE(PE):
         self.rel_delta_tol = rel_delta_tol
         self.pose_relation = pose_relation
         self.all_pairs = all_pairs
-        self.E = []
-        self.error = []
-        self.delta_ids = []
+        self.E: typing.List[np.ndarray] = []
+        self.error: typing.List[float] = []
+        self.delta_ids: typing.List[int] = []
         if pose_relation == PoseRelation.translation_part:
             self.unit = Unit.meters
         elif pose_relation == PoseRelation.rotation_angle_deg:
@@ -206,7 +203,7 @@ class RPE(PE):
             # dimension-less
             self.unit = Unit.none
 
-    def __str__(self):
+    def __str__(self) -> str:
         title = "RPE w.r.t. {} ({})\nfor delta = {} ({})".format(
             self.pose_relation.value, self.unit.value, self.delta,
             self.delta_unit.value)
@@ -216,19 +213,9 @@ class RPE(PE):
             title += " using consecutive pairs"
         return title
 
-    def reset_parameters(self, pose_relation=PoseRelation.translation_part,
-                         delta=1.0, delta_unit=Unit.frames, all_pairs=False):
-        """
-        Resets the current parameters and results.
-        :param delta: the interval step for indices (default: 1)
-        :param delta_unit: unit of delta (Unit enum member)
-        :param pose_relation: PoseRelation defining how the RPE is calculated
-        :param all_pairs: use all pairs instead of consecutive pairs
-        """
-        self.__init__(pose_relation, delta, delta_unit, all_pairs)
-
     @staticmethod
-    def rpe_base(Q_i, Q_i_delta, P_i, P_i_delta):
+    def rpe_base(Q_i: np.ndarray, Q_i_delta: np.ndarray, P_i: np.ndarray,
+                 P_i_delta: np.ndarray) -> np.ndarray:
         """
         Computes the relative SE(3) error pose for a single pose pair
         following the notation of the TUM RGB-D paper.
@@ -243,7 +230,7 @@ class RPE(PE):
         E_i = lie.relative_se3(Q_rel, P_rel)
         return E_i
 
-    def process_data(self, data):
+    def process_data(self, data: PathPair) -> None:
         """
         Calculates the RPE on a batch of SE(3) poses from trajectories.
         :param data: tuple (traj_ref, traj_est) with:
@@ -258,13 +245,12 @@ class RPE(PE):
             raise MetricsException(
                 "trajectories must have same number of poses")
 
-        id_pairs = filters.id_pairs_from_delta(
-            traj_est.poses_se3, self.delta, self.delta_unit,
-            self.rel_delta_tol, all_pairs=self.all_pairs)
+        id_pairs = id_pairs_from_delta(traj_est.poses_se3, self.delta,
+                                       self.delta_unit, self.rel_delta_tol,
+                                       all_pairs=self.all_pairs)
 
-        if not self.all_pairs:
-            # Store flat id list e.g. for plotting.
-            self.delta_ids = [j for i, j in id_pairs]
+        # Store flat id list e.g. for plotting.
+        self.delta_ids = [j for i, j in id_pairs]
 
         self.E = [
             self.rpe_base(traj_ref.poses_se3[i], traj_ref.poses_se3[j],
@@ -310,11 +296,11 @@ class APE(PE):
     APE: absolute pose error
     metric for investigating the global consistency of a SLAM trajectory
     """
-
-    def __init__(self, pose_relation=PoseRelation.translation_part):
+    def __init__(self,
+                 pose_relation: PoseRelation = PoseRelation.translation_part):
         self.pose_relation = pose_relation
-        self.E = []
-        self.error = []
+        self.E: typing.List[np.ndarray] = []
+        self.error: typing.List[float] = []
         if pose_relation == PoseRelation.translation_part:
             self.unit = Unit.meters
         elif pose_relation == PoseRelation.rotation_angle_deg:
@@ -324,21 +310,14 @@ class APE(PE):
         else:
             self.unit = Unit.none  # dimension-less
 
-    def __str__(self):
+    def __str__(self) -> str:
         title = "APE w.r.t. "
         title += (str(self.pose_relation.value) + " " +
                   ("(" + self.unit.value + ")" if self.unit else ""))
         return title
 
-    def reset_parameters(self, pose_relation=PoseRelation.translation_part):
-        """
-        Resets the current parameters and results.
-        :param pose_relation: PoseRelation defining how the APE is calculated
-        """
-        self.__init__(pose_relation)
-
     @staticmethod
-    def ape_base(x_t, x_t_star):
+    def ape_base(x_t: np.ndarray, x_t_star: np.ndarray) -> np.ndarray:
         """
         Computes the absolute error pose for a single SE(3) pose pair
         following the notation of the Kümmerle paper.
@@ -348,7 +327,7 @@ class APE(PE):
         """
         return lie.relative_se3(x_t, x_t_star)
 
-    def process_data(self, data):
+    def process_data(self, data: PathPair) -> None:
         """
         Calculates the APE on a batch of SE(3) poses from trajectories.
         :param data: tuple (traj_ref, traj_est) with:
@@ -395,3 +374,43 @@ class APE(PE):
             ])
         else:
             raise MetricsException("unsupported pose_relation")
+
+
+def id_pairs_from_delta(poses: np.ndarray, delta: float, delta_unit: Unit,
+                        rel_tol: float = 0.1,
+                        all_pairs: bool = False) -> filters.IdPairs:
+    """
+    high-level function - get index tuples of pairs with distance==delta
+    from a pose list
+    :param poses: list of SE(3) poses
+    :param delta: the interval step for indices
+    :param delta_unit: unit of delta (metrics.Unit enum member)
+    :param rel_tol: relative tolerance to accept or reject deltas
+    :param all_pairs: use all pairs instead of consecutive pairs
+    :return: list of index tuples (pairs)
+    """
+    if delta_unit == Unit.frames:
+        id_pairs = filters.filter_pairs_by_index(poses, int(delta), all_pairs)
+    elif delta_unit == Unit.meters:
+        id_pairs = filters.filter_pairs_by_path(poses, delta, delta * rel_tol,
+                                                all_pairs)
+    elif delta_unit in {Unit.degrees, Unit.radians}:
+        use_degrees = (delta_unit == Unit.degrees)
+        id_pairs = filters.filter_pairs_by_angle(poses, delta, delta * rel_tol,
+                                                 use_degrees, all_pairs)
+    else:
+        raise filters.FilterException(
+            "unsupported delta unit: {}".format(delta_unit))
+
+    if len(id_pairs) == 0:
+        raise filters.FilterException(
+            "delta = {} ({}) produced an empty index list - try lower values "
+            "or a less strict tolerance".format(delta, delta_unit.value))
+
+    logger.debug(
+        "Found {} pairs with delta {} ({}) "
+        "among {} poses ".format(len(id_pairs), delta, delta_unit.value,
+                                 len(poses)) +
+        ("using consecutive pairs." if not all_pairs else "using all pairs."))
+
+    return id_pairs

@@ -1,4 +1,3 @@
-from __future__ import print_function
 from setuptools import setup, Command
 from setuptools.command.install import install
 
@@ -9,13 +8,9 @@ import subprocess as sp
 
 # monkey patch because setuptools entry_points are slow as fuck
 # https://github.com/ninjaaron/fast-entry_points
-import fastentrypoints
+import fastentrypoints  # pylint: disable=unused-import
 
 HERE = os.path.abspath(os.path.dirname(__file__))
-
-
-def python_below_34():
-    return sys.version_info[0] < 3 or sys.version_info[1] < 4
 
 
 def activate_argcomplete():
@@ -108,17 +103,17 @@ setup(
         "pygments",
         "pyyaml",
         "pillow",
-        #jupyter
-    ] + (["enum34"] if python_below_34() else []),
+    ],
+    python_requires=">=3.6",
     classifiers=[
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Topic :: Scientific/Engineering",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: Implementation :: CPython"
     ]
 )

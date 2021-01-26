@@ -21,16 +21,15 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
+import argparse
+import json
+import logging
 import os
 import sys
-import json
-import argparse
-import logging
+import typing
 
 import colorama
-from colorama import Fore, Style
+from colorama import Style
 from pygments import highlight, lexers, formatters
 
 from evo import EvoException
@@ -47,31 +46,32 @@ class ConfigError(EvoException):
     pass
 
 
-def log_info_dict_json(data_str, colored=True):
-    data_str = json.dumps(data_str, indent=4, sort_keys=True)
+def log_info_dict_json(data: dict, colored: bool = True) -> None:
+    data_str = json.dumps(data, indent=4, sort_keys=True)
     if colored and os.name != "nt":
         data_str = highlight(data_str, lexers.JsonLexer(),
                              formatters.Terminal256Formatter(style="monokai"))
     logger.info(data_str)
 
 
-def show(cfg_path, colored=True):
-    with open(cfg_path) as cfg_file:
-        log_info_dict_json(json.load(cfg_file), colored)
+def show(config_path: str, colored: bool = True) -> None:
+    with open(config_path) as config_file:
+        log_info_dict_json(json.load(config_file), colored)
 
 
-def merge_json_union(first, second, soft=False):
-    with open(first, 'r+') as f_1:
-        cfg_1 = json.loads(f_1.read())
-        with open(second) as f_2:
-            cfg_2 = json.loads(f_2.read())
-            cfg_1 = settings.merge_dicts(cfg_1, cfg_2, soft)
+def merge_json_union(first_file: str, second_file: str,
+                     soft: bool = False) -> None:
+    with open(first_file, 'r+') as f_1:
+        config_1 = json.loads(f_1.read())
+        with open(second_file) as f_2:
+            config_2 = json.loads(f_2.read())
+            config_1 = settings.merge_dicts(config_1, config_2, soft)
         f_1.truncate(0)
         f_1.seek(0)
-        f_1.write(json.dumps(cfg_1, indent=4, sort_keys=True))
+        f_1.write(json.dumps(config_1, indent=4, sort_keys=True))
 
 
-def is_number(token):
+def is_number(token: str) -> bool:
     try:
         float(token)
         return True
@@ -79,47 +79,71 @@ def is_number(token):
         return False
 
 
-def set_cfg(cfg_path, arg_list):
-    with open(cfg_path) as cfg_file:
-        data = json.load(cfg_file)
+def finalize_values(config: dict, key: str,
+                values: typing.List[str]) -> typing.Any:
+    """
+    Turns parsed values into final value(s) for the config at the given key,
+    e.g. based on the previous type of that parameter or other constraints.
+    """
+    if len(values) == 0:
+        return None
+    # Special treatment for plot_seaborn_palette is needed, see #359.
+    if key == "plot_seaborn_palette":
+        if len(values) > 1:
+            return values
+        from seaborn.palettes import color_palette
+        try:
+            color_palette(values[0])
+            return values[0]
+        except ValueError:
+            return values
+    if isinstance(config[key], bool):
+        value = values[-1]
+        if isinstance(value, str) and value.lower() == "false":
+            return False
+        elif isinstance(value, str) and value.lower() == "true":
+            return True
+        else:
+            return not config[key]
+    if not isinstance(config[key], list):
+        return values[0]
+    if isinstance(values[0], str) and values[0].lower() in ("[]", "none"):
+        return []
+
+    return values
+
+
+def set_config(config_path: str, arg_list: typing.Sequence[str]) -> None:
+    with open(config_path) as config_file:
+        config = json.load(config_file)
     max_idx = len(arg_list) - 1
     for i, arg in enumerate(arg_list):
-        if arg in data:
-            if i + 1 <= max_idx:
-                if arg_list[i + 1].lower() == "true":
-                    data[arg] = True
-                elif arg_list[i + 1].lower() == "false":
-                    data[arg] = False
+        if arg not in config.keys():
+            continue
+        if i + 1 <= max_idx and arg_list[i + 1] not in config.keys():
+            values: typing.List[typing.Any] = []
+            for j in range(i + 1, max_idx + 1):
+                value = arg_list[j]
+                if value in config.keys():
+                    break
+                if is_number(value):
+                    if int(float(value)) - float(value) != 0:
+                        values.append(float(value))
+                    else:
+                        values.append(int(float(value)))
                 else:
-                    values = []
-                    for j in range(i + 1, max_idx + 1):
-                        value = arg_list[j]
-                        if value in data:
-                            break
-                        if is_number(value):
-                            if int(float(value)) - float(value) != 0:
-                                values.append(float(value))
-                            else:
-                                values.append(int(float(value)))
-                        else:
-                            values.append(value)
-                    if not isinstance(data[arg], list):
-                        values = values[0]
-                    elif len(values) == 1:
-                        if values[0].lower() in ("none", "", "[]"):
-                            values = []
-                    data[arg] = not data[arg] if isinstance(data[arg],
-                                                            bool) else values
-            elif i + 1 > max_idx or arg_list[i + 1] in data:
-                # toggle boolean parameter
-                data[arg] = not data[arg] if isinstance(data[arg],
-                                                        bool) else data[arg]
-    with open(cfg_path, 'w') as cfg_file:
-        cfg_file.write(json.dumps(data, indent=4, sort_keys=True))
+                    values.append(value)
+            config[arg] = finalize_values(config, arg, values)
+        else:
+            # no argument, toggle if it's a boolean parameter
+            config[arg] = not config[arg] if isinstance(config[arg],
+                                                        bool) else config[arg]
+    with open(config_path, 'w') as config_file:
+        config_file.write(json.dumps(config, indent=4, sort_keys=True))
 
 
-def generate(arg_list):
-    data = {}
+def generate(arg_list: typing.Sequence[str]) -> typing.Dict[str, typing.Any]:
+    data: typing.Dict[str, typing.Any] = {}
     max_idx = len(arg_list) - 1
     for i, arg in enumerate(arg_list):
         if arg.startswith("-"):
@@ -128,7 +152,7 @@ def generate(arg_list):
                     and arg_list[i + 1].startswith("-")) or i + 1 > max_idx:
                 data[arg] = True  # just a boolean flag
             else:
-                values = []
+                values: typing.List[typing.Any] = []
                 for j in range(i + 1, max_idx + 1):
                     value = arg_list[j]
                     if value.startswith("-"):
@@ -189,15 +213,15 @@ To save the configuration, specify -o / --output.
 '''
 
 
-def main():
+def main() -> None:
     import argcomplete
     basic_desc = "crappy configuration tool"
     lic = "(c) evo authors"
     shared_parser = argparse.ArgumentParser(add_help=False)
     shared_parser.add_argument("--no_color", help="don't color output",
                                action="store_true")
-    main_parser = argparse.ArgumentParser(
-        description="%s %s" % (basic_desc, lic))
+    main_parser = argparse.ArgumentParser(description="%s %s" %
+                                          (basic_desc, lic))
     sub_parsers = main_parser.add_subparsers(dest="subcommand")
     sub_parsers.required = True
 
@@ -214,9 +238,9 @@ def main():
     set_parser = sub_parsers.add_parser(
         "set", description=SET_HELP, parents=[shared_parser],
         formatter_class=argparse.RawTextHelpFormatter)
-    set_parser.add_argument("params", choices=list(
-        DEFAULT_SETTINGS_DICT.keys()), nargs=argparse.REMAINDER,
-                            help="parameters to set")
+    set_parser.add_argument("params",
+                            choices=list(DEFAULT_SETTINGS_DICT.keys()),
+                            nargs=argparse.REMAINDER, help="parameters to set")
     set_parser.add_argument(
         "-c", "--config",
         help="optional config file (default: package settings)", default=None)
@@ -237,6 +261,10 @@ def main():
         parents=[shared_parser])
     reset_parser.add_argument("-y", help="acknowledge automatically",
                               action="store_true")
+    reset_parser.add_argument("params",
+                              choices=list(DEFAULT_SETTINGS_DICT.keys()),
+                              nargs=argparse.REMAINDER,
+                              help="parameters to reset")
 
     argcomplete.autocomplete(main_parser)
     if len(sys.argv) > 1 and sys.argv[1] == "set":
@@ -267,12 +295,12 @@ def main():
     elif args.subcommand == "set":
         if not os.access(config, os.W_OK):
             logger.error("No permission to modify " + config)
-            sys.exit()
+            sys.exit(1)
         if other_args or args.merge:
             logger.info("{0}\nOld configuration:\n{0}".format(SEP))
             show(config, colored=not args.no_color)
             try:
-                set_cfg(config, other_args)
+                set_config(config, other_args)
             except ConfigError as e:
                 logger.error(e)
                 sys.exit(1)
@@ -303,12 +331,16 @@ def main():
     elif args.subcommand == "reset":
         if not os.access(config, os.W_OK):
             logger.error("No permission to modify" + config)
-            sys.exit()
-        if args.y or user.confirm(
-                "Reset the package settings to the default settings? (y/n)"):
+            sys.exit(1)
+        if args.params:
+            settings.reset(settings.DEFAULT_PATH, parameter_subset=args.params)
+        elif args.y or user.confirm(
+                "Reset all package settings to the default settings? (y/n)"):
             settings.reset()
-            logger.info("{0}\nPackage settings after reset:\n{0}".format(SEP))
-            show(settings.DEFAULT_PATH, colored=not args.no_color)
+        else:
+            sys.exit()
+        logger.info("{0}\nPackage settings after reset:\n{0}".format(SEP))
+        show(settings.DEFAULT_PATH, colored=not args.no_color)
 
 
 if __name__ == '__main__':

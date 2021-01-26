@@ -20,9 +20,8 @@ along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 import logging
-import os
-import six
 import sys
+import typing
 
 import colorama
 from colorama import Fore
@@ -58,16 +57,17 @@ class ConsoleFormatter(logging.Formatter):
             self._fmt = self.info_fmt
         elif record.levelno == logging.DEBUG:
             self._fmt = self.debug_fmt
-        if six.PY3:
-            self._style._fmt = self._fmt
+        self._style._fmt = self._fmt
         result = logging.Formatter.format(self, record)
         return result
 
 
 # configures the package's root logger (see __init__.py)
-def configure_logging(verbose=False, silent=False, debug=False,
-                      console_fmt=None, file_fmt=DEFAULT_LONG_FMT,
-                      local_logfile=None):
+def configure_logging(verbose: bool = False, silent: bool = False,
+                      debug: bool = False,
+                      console_fmt: typing.Optional[str] = None,
+                      file_fmt: str = DEFAULT_LONG_FMT,
+                      local_logfile: typing.Optional[str] = None) -> None:
 
     logger = logging.getLogger("evo")
     logger.setLevel(logging.DEBUG)

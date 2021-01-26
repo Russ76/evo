@@ -21,17 +21,13 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
-import os
-import six
-import sys
-import shutil
 import argparse
+import os
+import shutil
 import subprocess as sp
+import sys
 
-from evo.tools.settings import PACKAGE_BASE_PATH
-from evo.tools.compat import which
+from evo import PACKAGE_BASE_PATH
 
 DESC = '''
 Launches an IPython shell with pre-loaded evo modules
@@ -41,7 +37,7 @@ Unknown command line arguments are forwarded to the ipython executable
 '''
 
 
-def main():
+def main() -> None:
     main_parser = argparse.ArgumentParser(
         description=DESC, formatter_class=argparse.RawTextHelpFormatter)
     args, other_args = main_parser.parse_known_args()
@@ -49,11 +45,11 @@ def main():
     FNULL = open(os.devnull, 'w')
 
     # check if IPython is installed properly
-    ipython = "ipython3" if six.PY3 else "ipython2"
-    if which(ipython) is None:
-        # fall back to the non-explicit ipython name if ipython2/3 is not in PATH
+    ipython = "ipython3"
+    if shutil.which(ipython) is None:
+        # fall back to the non-explicit ipython name if ipython3 is not in PATH
         ipython = "ipython"
-        if which(ipython) is None:
+        if shutil.which(ipython) is None:
             print("IPython is not installed", file=sys.stderr)
             sys.exit(1)
 

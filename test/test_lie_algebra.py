@@ -19,15 +19,12 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
 import random
 import timeit
 import unittest
 
 import numpy as np
 
-import context
 from evo.core import lie_algebra as lie
 
 

@@ -1,7 +1,7 @@
 from colorama import Fore, Style
 
 # Configuration file for ipython.
-c = get_config()
+c = get_config()   # type: ignore
 
 #------------------------------------------------------------------------------
 # InteractiveShellApp(Configurable) configuration
@@ -34,7 +34,6 @@ c = get_config()
 ## lines of code to run at IPython startup.
 # yapf: disable
 c.InteractiveShellApp.exec_lines = [
-    'from __future__ import print_function',
     'from evo.core import lie_algebra, metrics, result, sync, trajectory',
     'from evo.tools import file_interface, pandas_bridge, plot, settings',
     'from evo.main_ape import ape',

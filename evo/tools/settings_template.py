@@ -18,11 +18,15 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
+import os
 import pkgutil
 
 
-def get_default_plot_backend():
-    backends = {"PyQt5": "Qt5Agg", "PyQt4": "Qt4Agg"}
+def get_default_plot_backend() -> str:
+    if os.name == "posix" and os.getenv("DISPLAY", default="") == "":
+        return "Agg"
+
+    backends = {"PyQt5": "Qt5Agg"}
     for pkg in backends:
         if pkgutil.find_loader(pkg) is not None:
             return backends[pkg]
@@ -53,7 +57,7 @@ DEFAULT_SETTINGS_DICT_DOC = {
     ),
     "plot_backend": (
         get_default_plot_backend(),
-        "matplotlib backend - default: 'Qt{4, 5}Agg' (if PyQt is installed) or 'TkAgg'."
+        "matplotlib backend - default is 'Qt5Agg' (if PyQt is installed) or 'TkAgg'."
     ),
     "plot_pose_correspondences": (
         False,

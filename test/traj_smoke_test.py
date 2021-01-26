@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import print_function
-
 import os
 import glob
 import shutil
@@ -22,10 +20,10 @@ data = {
     "--ref data/fr2_desk_groundtruth.txt": "cfg/traj/tum"
 }
 try:
-    import rosbag
+    import rosbag  # pylint: disable=unused-import
     data["evo_traj bag data/ROS_example.bag groundtruth S-PTAM ORB-SLAM --ref groundtruth"] \
       = "cfg/traj/bag"
-except:
+except ImportError:
     pass
 
 try:

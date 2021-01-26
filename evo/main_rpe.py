@@ -21,10 +21,14 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
+import argparse
 import logging
 
+import evo.common_ape_rpe as common
+from evo.core import lie_algebra, sync, metrics
+from evo.core.result import Result
+from evo.core.trajectory import PosePath3D, PoseTrajectory3D
+from evo.tools import file_interface, log
 from evo.tools.settings import SETTINGS
 
 logger = logging.getLogger(__name__)
@@ -32,9 +36,7 @@ logger = logging.getLogger(__name__)
 SEP = "-" * 80  # separator line
 
 
-def parser():
-    import argparse
-
+def parser() -> argparse.ArgumentParser:
     basic_desc = "Relative pose error (RPE) metric app"
     lic = "(c) evo authors"
 
@@ -52,6 +54,10 @@ def parser():
                            action="store_true")
     algo_opts.add_argument("-s", "--correct_scale", action="store_true",
                            help="correct scale with Umeyama's method")
+    algo_opts.add_argument(
+        "--n_to_align",
+        help="the number of poses to use for Umeyama alignment, "
+        "counted from the start (default: all)", default=-1, type=int)
     algo_opts.add_argument(
         "--align_origin",
         help="align the trajectory origin to the origin of the reference "
@@ -168,23 +174,24 @@ def parser():
     return main_parser
 
 
-def rpe(traj_ref, traj_est, pose_relation, delta, delta_unit,
-        rel_delta_tol=0.1, all_pairs=False, align=False, correct_scale=False,
-        align_origin=False, ref_name="reference", est_name="estimate",
-        support_loop=False):
-
-    from evo.core import metrics
-    from evo.core import trajectory
+def rpe(traj_ref: PosePath3D, traj_est: PosePath3D,
+        pose_relation: metrics.PoseRelation, delta: float,
+        delta_unit: metrics.Unit, rel_delta_tol: float = 0.1,
+        all_pairs: bool = False, align: bool = False,
+        correct_scale: bool = False, n_to_align: int = -1,
+        align_origin: bool = False, ref_name: str = "reference",
+        est_name: str = "estimate", support_loop: bool = False) -> Result:
 
     # Align the trajectories.
     only_scale = correct_scale and not align
+    alignment_transformation = None
     if align or correct_scale:
         logger.debug(SEP)
-        traj_est = trajectory.align_trajectory(traj_est, traj_ref,
-                                               correct_scale, only_scale)
+        alignment_transformation = lie_algebra.sim3(
+            *traj_est.align(traj_ref, correct_scale, only_scale, n=n_to_align))
     elif align_origin:
         logger.debug(SEP)
-        traj_est = trajectory.align_trajectory_origin(traj_est, traj_ref)
+        alignment_transformation = traj_est.align_origin(traj_ref)
 
     # Calculate RPE.
     logger.debug(SEP)
@@ -204,6 +211,8 @@ def rpe(traj_ref, traj_est, pose_relation, delta, delta_unit,
         title += "\n(with origin alignment)"
     else:
         title += "\n(not aligned)"
+    if (align or correct_scale) and n_to_align != -1:
+        title += " (aligned poses: {})".format(n_to_align)
 
     rpe_result = rpe_metric.get_result(ref_name, est_name)
     rpe_result.info["title"] = title
@@ -221,21 +230,21 @@ def rpe(traj_ref, traj_est, pose_relation, delta, delta_unit,
     rpe_result.add_trajectory(ref_name, traj_ref)
     rpe_result.add_trajectory(est_name, traj_est)
 
-    if isinstance(traj_est, trajectory.PoseTrajectory3D) and not all_pairs:
+    if isinstance(traj_est, PoseTrajectory3D):
         seconds_from_start = [
             t - traj_est.timestamps[0] for t in traj_est.timestamps
         ]
         rpe_result.add_np_array("seconds_from_start", seconds_from_start)
         rpe_result.add_np_array("timestamps", traj_est.timestamps)
 
+    if alignment_transformation is not None:
+        rpe_result.add_np_array("alignment_transformation_sim3",
+                                alignment_transformation)
+
     return rpe_result
 
 
-def run(args):
-    import evo.common_ape_rpe as common
-    from evo import EvoException
-    from evo.core import sync
-    from evo.tools import file_interface, log
+def run(args: argparse.Namespace) -> None:
 
     log.configure_logging(args.verbose, args.silent, args.debug,
                           local_logfile=args.logfile)
@@ -244,10 +253,6 @@ def run(args):
         parser_str = pformat({arg: getattr(args, arg) for arg in vars(args)})
         logger.debug("main_parser config:\n{}".format(parser_str))
     logger.debug(SEP)
-
-    if (args.plot or args.save_plot or args.serialize_plot) and args.all_pairs:
-        raise EvoException(
-            "all_pairs mode cannot be used with plotting functions")
 
     traj_ref, traj_est, ref_name, est_name = common.load_trajectories(args)
     pose_relation = common.get_pose_relation(args)
@@ -258,7 +263,8 @@ def run(args):
         import copy
         traj_ref_full = copy.deepcopy(traj_ref)
 
-    if args.subcommand != "kitti":
+    if isinstance(traj_ref, PoseTrajectory3D) and isinstance(
+            traj_est, PoseTrajectory3D):
         logger.debug("Synchronizing trajectories...")
         traj_ref, traj_est = sync.associate_trajectories(
             traj_ref, traj_est, args.t_max_diff, args.t_offset,
@@ -274,14 +280,16 @@ def run(args):
         all_pairs=args.all_pairs,
         align=args.align,
         correct_scale=args.correct_scale,
+        n_to_align=args.n_to_align,
         align_origin=args.align_origin,
         ref_name=ref_name,
         est_name=est_name,
     )
 
     if args.plot or args.save_plot or args.serialize_plot:
-        common.plot(args, result, traj_ref, result.trajectories[est_name],
-                    traj_ref_full=traj_ref_full)
+        common.plot_result(args, result, traj_ref,
+                           result.trajectories[est_name],
+                           traj_ref_full=traj_ref_full)
 
     if args.save_results:
         logger.debug(SEP)

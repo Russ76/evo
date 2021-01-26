@@ -20,23 +20,17 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
 import argparse
 import logging
 import sys
-
-import six
+import typing
 
 import argcomplete
 from evo import EvoException, NullHandler
 
 logger = logging.getLogger(__name__)
 
-if six.PY2:
-    KNOWN_EXCEPTIONS = EvoException
-else:
-    KNOWN_EXCEPTIONS = (EvoException, FileNotFoundError)
+KNOWN_EXCEPTIONS = (EvoException, FileNotFoundError)
 """
 the actual entry points:
 to save time for argcomplete (tab bash completion),
@@ -45,35 +39,35 @@ only do required imports in respective module when creating parser
 """
 
 
-def ape():
+def ape() -> None:
     from evo import main_ape
     parser = main_ape.parser()
     argcomplete.autocomplete(parser)
     launch(main_ape, parser)
 
 
-def rpe():
+def rpe() -> None:
     from evo import main_rpe
     parser = main_rpe.parser()
     argcomplete.autocomplete(parser)
     launch(main_rpe, parser)
 
 
-def res():
+def res() -> None:
     from evo import main_res
     parser = main_res.parser()
     argcomplete.autocomplete(parser)
     launch(main_res, parser)
 
 
-def traj():
+def traj() -> None:
     from evo import main_traj
     parser = main_traj.parser()
     argcomplete.autocomplete(parser)
     launch(main_traj, parser)
 
 
-def merge_config(args):
+def merge_config(args: argparse.Namespace) -> argparse.Namespace:
     """
     merge .json config file with the command line args (if --config was defined)
     :param args: parsed argparse NameSpace object
@@ -90,7 +84,7 @@ def merge_config(args):
     return args
 
 
-def launch(main_module, parser):
+def launch(main_module, parser: argparse.ArgumentParser) -> None:
     args = parser.parse_args()
     if hasattr(args, "config"):
         args = merge_config(args)

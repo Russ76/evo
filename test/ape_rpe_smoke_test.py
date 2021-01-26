@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import print_function
-
 import os
 import shutil
 import subprocess as sp
@@ -21,9 +19,9 @@ data = [
     "tum data/fr2_desk_groundtruth.txt data/fr2_desk_ORB.txt"
 ]
 try:
-    import rosbag
+    import rosbag  # pylint: disable=unused-import
     data.append("bag data/ROS_example.bag groundtruth S-PTAM")
-except:
+except ImportError:
     pass
 
 try:

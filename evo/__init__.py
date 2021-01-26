@@ -1,16 +1,15 @@
-# https://docs.python.org/3/howto/logging.html#library-config
-
 import logging
-try:  # Python 2.7+
-    from logging import NullHandler
-except ImportError:
+import os
 
-    class NullHandler(logging.Handler):
-        def emit(self, record):
-            pass
-
+# https://docs.python.org/3/howto/logging.html#library-config
+from logging import NullHandler
 
 logging.getLogger(__name__).addHandler(NullHandler())
+
+PACKAGE_BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+
+__version__ = open(os.path.join(PACKAGE_BASE_PATH,
+                                "version")).read().splitlines()[0]
 
 
 class EvoException(Exception):

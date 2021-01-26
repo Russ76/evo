@@ -21,9 +21,9 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
+import argparse
 import logging
+import os
 
 from evo.tools.settings import SETTINGS
 
@@ -32,8 +32,7 @@ logger = logging.getLogger(__name__)
 SEP = "-" * 80
 
 
-def parser():
-    import argparse
+def parser() -> argparse.ArgumentParser:
     basic_desc = "trajectory analysis and manipulation tool"
     lic = "(c) evo authors"
     shared_parser = argparse.ArgumentParser(add_help=False)
@@ -172,7 +171,6 @@ def die(msg):
 
 
 def load_trajectories(args):
-    import os
     from collections import OrderedDict
     from evo.tools import file_interface
     trajectories = OrderedDict()
@@ -274,8 +272,22 @@ def print_traj_info(name, traj, verbose=False, full_check=False,
         logger.info("infos:\t" + str(traj))
 
 
+def to_filestem(name: str, args: argparse.Namespace) -> str:
+    if args.subcommand == "bag":
+        if name.startswith('/'):
+            name = name[1:]
+        name = name.replace(':', '/')  # TF ID
+        return name.replace('/', '_')
+    return os.path.splitext(os.path.basename(name))[0]
+
+
+def to_topic_name(name: str, args: argparse.Namespace) -> str:
+    if args.subcommand == "bag":
+        return name.replace(':', '/')
+    return '/' + os.path.splitext(os.path.basename(name))[0].replace(' ', '_')
+
+
 def run(args):
-    import os
     import sys
 
     import numpy as np
@@ -355,16 +367,14 @@ def run(args):
             if args.align or args.correct_scale:
                 logger.debug(SEP)
                 logger.debug("Aligning {} to reference.".format(name))
-                trajectories[name] = trajectory.align_trajectory(
-                    trajectories[name], ref_traj_tmp,
-                    correct_scale=args.correct_scale,
+                trajectories[name].align(
+                    ref_traj_tmp, correct_scale=args.correct_scale,
                     correct_only_scale=args.correct_scale and not args.align,
                     n=args.n_to_align)
             if args.align_origin:
                 logger.debug(SEP)
                 logger.debug("Aligning {}'s origin to reference.".format(name))
-                trajectories[name] = trajectory.align_trajectory_origin(
-                    trajectories[name], ref_traj_tmp)
+                trajectories[name].align_origin(ref_traj_tmp)
             if SETTINGS.plot_pose_correspondences:
                 synced_refs[name] = ref_traj_tmp
 
@@ -479,21 +489,21 @@ def run(args):
     if args.save_as_tum:
         logger.info(SEP)
         for name, traj in trajectories.items():
-            dest = os.path.splitext(os.path.basename(name))[0] + ".tum"
+            dest = to_filestem(name, args) + ".tum"
             file_interface.write_tum_trajectory_file(
                 dest, traj, confirm_overwrite=not args.no_warnings)
         if args.ref:
-            dest = os.path.splitext(os.path.basename(args.ref))[0] + ".tum"
+            dest = to_filestem(args.ref, args) + ".tum"
             file_interface.write_tum_trajectory_file(
                 dest, ref_traj, confirm_overwrite=not args.no_warnings)
     if args.save_as_kitti:
         logger.info(SEP)
         for name, traj in trajectories.items():
-            dest = os.path.splitext(os.path.basename(name))[0] + ".kitti"
+            dest = to_filestem(name, args) + ".kitti"
             file_interface.write_kitti_poses_file(
                 dest, traj, confirm_overwrite=not args.no_warnings)
         if args.ref:
-            dest = os.path.splitext(os.path.basename(args.ref))[0] + ".kitti"
+            dest = to_filestem(args.ref, args) + ".kitti"
             file_interface.write_kitti_poses_file(
                 dest, ref_traj, confirm_overwrite=not args.no_warnings)
     if args.save_as_bag:
@@ -506,13 +516,13 @@ def run(args):
         bag = rosbag.Bag(dest_bag_path, 'w')
         try:
             for name, traj in trajectories.items():
-                dest_topic = os.path.splitext(os.path.basename(name))[0]
+                dest_topic = to_topic_name(name, args)
                 frame_id = traj.meta[
                     "frame_id"] if "frame_id" in traj.meta else ""
                 file_interface.write_bag_trajectory(bag, traj, dest_topic,
                                                     frame_id)
             if args.ref:
-                dest_topic = os.path.splitext(os.path.basename(args.ref))[0]
+                dest_topic = to_topic_name(args.ref, args)
                 frame_id = ref_traj.meta[
                     "frame_id"] if "frame_id" in ref_traj.meta else ""
                 file_interface.write_bag_trajectory(bag, ref_traj, dest_topic,

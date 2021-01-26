@@ -21,9 +21,9 @@ You should have received a copy of the GNU General Public License
 along with evo.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
 import os
+
+from evo import PACKAGE_BASE_PATH, __version__
 from evo.tools import settings
 
 DESC = '''
@@ -54,7 +54,7 @@ Tools:
 '''
 
 
-def main():
+def main() -> None:
     import sys
     import argparse
     import argcomplete
@@ -104,26 +104,23 @@ def main():
             pkg_parser.print_help()
             sys.exit(1)
         if args.license:
-            print(open(os.path.join(settings.PACKAGE_BASE_PATH,
-                                    "LICENSE")).read())
+            print(open(os.path.join(PACKAGE_BASE_PATH, "LICENSE")).read())
         if args.info:
             main_parser.print_usage()
             print(DESC)
         if args.version:
-            here = os.path.dirname(os.path.abspath(__file__))
-            version_path = os.path.join(here, "version")
-            print(" ".join(open(version_path).read().splitlines()),
-                  end=line_end)
+            print(__version__, end=line_end)
         if args.pyversion:
             import platform as pf
             print(pf.python_version(), end=line_end)
         if args.location:
-            print(settings.PACKAGE_BASE_PATH, end=line_end)
+            print(PACKAGE_BASE_PATH, end=line_end)
         if args.logfile or args.open_log:
             print(settings.GLOBAL_LOGFILE_PATH, end=line_end)
             if not os.path.exists(settings.GLOBAL_LOGFILE_PATH):
-                print("no logfile found - run: "
-                      "evo_config set global_logfile_enabled", end=line_end)
+                print(
+                    "no logfile found - run: "
+                    "evo_config set global_logfile_enabled", end=line_end)
                 sys.exit(1)
             if args.open_log:
                 import webbrowser
@@ -139,8 +136,9 @@ def main():
             sys.exit(1)
         if not args.message and sys.stdin.isatty():
             if not os.path.exists(settings.GLOBAL_LOGFILE_PATH):
-                print("no logfile found - run: "
-                      "evo_config set global_logfile_enabled", end=line_end)
+                print(
+                    "no logfile found - run: "
+                    "evo_config set global_logfile_enabled", end=line_end)
             else:
                 print(open(settings.GLOBAL_LOGFILE_PATH).read(), end="")
         elif not settings.SETTINGS.global_logfile_enabled:
